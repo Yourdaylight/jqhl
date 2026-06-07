@@ -184,7 +184,9 @@ func wrapBackgroundLoopStart(start func()) func() {
 	}
 	var once sync.Once
 	return func() {
-		once.Do(start)
+		once.Do(func() {
+			go start()
+		})
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/djylb/nps/lib/common"
 	"github.com/djylb/nps/lib/logs"
 	"github.com/djylb/nps/lib/servercfg"
+	"github.com/djylb/nps/server"
 	webapi "github.com/djylb/nps/web/api"
 	webservice "github.com/djylb/nps/web/service"
 )
@@ -605,6 +606,17 @@ func NewStateWithApp(app *webapi.App) *State {
 	if hooks, ok := app.Hooks.(compositeManagementHooks); ok {
 		hooks.webhooks = state.NodeWebhooks
 		app.Hooks = hooks
+	}
+	// Register the global management event hook so web/service can emit events.
+	// Must be done after state is fully initialized to avoid nil pointer dereferences
+	// if an event is emitted concurrently during startup.
+	server.ManagementEventHook = func(eventName, resource, action string, fields map[string]interface{}) {
+		emitNodeManagementEvent(state, state.BaseContext(), webapi.Event{
+			Name:     eventName,
+			Resource: resource,
+			Action:   action,
+			Fields:   fields,
+		})
 	}
 	return state
 }

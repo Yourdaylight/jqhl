@@ -9,6 +9,7 @@ import (
 	"github.com/djylb/nps/lib/common"
 	"github.com/djylb/nps/lib/crypt"
 	"github.com/djylb/nps/lib/file"
+	"github.com/djylb/nps/server"
 )
 
 type IndexService interface {
@@ -615,6 +616,7 @@ func (s DefaultIndexService) AddTunnel(input AddTunnelInput) (TunnelMutation, er
 		return TunnelMutation{}, normalizedErr
 	}
 
+	emitTunnelEvent("tunnel.created", "create", tunnel)
 	return newRuntimeTunnelMutationResult(s.runtime(), tunnel), nil
 }
 
@@ -733,6 +735,7 @@ func (s DefaultIndexService) EditTunnel(input EditTunnelInput) (TunnelMutation, 
 		return TunnelMutation{}, mapTunnelNotFound(normalizeRuntimeError(err))
 	}
 
+	emitTunnelEvent("tunnel.updated", "update", working)
 	return newRuntimeTunnelMutationResult(s.runtime(), working), nil
 }
 
@@ -754,6 +757,7 @@ func (s DefaultIndexService) StopTunnel(id int, mode string) (TunnelMutation, er
 		}
 		return TunnelMutation{}, err
 	}
+	emitTunnelEvent("tunnel.stopped", "stop", tunnel)
 	return newRuntimeTunnelMutationResult(s.runtime(), tunnel), nil
 }
 
@@ -778,6 +782,7 @@ func (s DefaultIndexService) DeleteTunnel(id int) (TunnelMutation, error) {
 		return TunnelMutation{ID: id}, nil
 	}
 	deleted.NowConn = 0
+	emitTunnelEvent("tunnel.deleted", "delete", deleted)
 	return newRuntimeTunnelMutationResult(s.runtime(), deleted), nil
 }
 
@@ -799,6 +804,7 @@ func (s DefaultIndexService) StartTunnel(id int, mode string) (TunnelMutation, e
 		}
 		return TunnelMutation{}, err
 	}
+	emitTunnelEvent("tunnel.started", "start", tunnel)
 	return newRuntimeTunnelMutationResult(s.runtime(), tunnel), nil
 }
 
@@ -851,6 +857,7 @@ func changeTunnelStatusWithRepo(repo IndexRepository, runtime IndexRuntime, id i
 	if err := repo.SaveTunnel(working); err != nil {
 		return TunnelMutation{}, mapTunnelNotFound(err)
 	}
+	emitTunnelEvent("tunnel.updated", "update", working)
 	return newRuntimeTunnelMutationResult(runtime, working), nil
 }
 
@@ -1545,4 +1552,47 @@ func (s DefaultIndexService) quotaStore() QuotaStore {
 		return s.QuotaStore
 	}
 	return DefaultQuotaStore{}
+}
+
+func emitTunnelEvent(eventName, action string, tunnel *file.Tunnel) {
+	hook := server.ManagementEventHook
+	if hook == nil || tunnel == nil {
+		return
+	}
+	targetAddr := ""
+	if tunnel.Target != nil {
+		tunnel.Target.RLock()
+		targetAddr = tunnel.Target.TargetStr
+		tunnel.Target.RUnlock()
+	}
+	fields := map[string]interface{}{
+		"id":          tunnel.Id,
+		"port":        tunnel.Port,
+		"mode":        tunnel.Mode,
+		"status":      tunnel.Status,
+		"run_status":  tunnel.RunStatus,
+		"remark":      tunnel.Remark,
+		"target":      targetAddr,
+		"target_type": tunnel.TargetType,
+		"now_conn":    tunnel.NowConn,
+		"max_conn":    tunnel.MaxConn,
+		"expire_at":   tunnel.ExpireAt,
+		"rate_limit":  tunnel.RateLimit,
+	}
+	if tunnel.Client != nil {
+		fields["client_id"] = tunnel.Client.Id
+	}
+	if tunnel.Flow != nil {
+		tunnel.Flow.RLock()
+		fields["flow_in"] = tunnel.Flow.InletFlow
+		fields["flow_out"] = tunnel.Flow.ExportFlow
+		fields["flow_limit"] = tunnel.Flow.FlowLimit
+		tunnel.Flow.RUnlock()
+	}
+	if tunnel.ServiceTraffic != nil {
+		in, out, _ := tunnel.ServiceTraffic.Snapshot()
+		fields["service_traffic_in"] = in
+		fields["service_traffic_out"] = out
+	}
+	hook(eventName, "tunnel", action, fields)
 }

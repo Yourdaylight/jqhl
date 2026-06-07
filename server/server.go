@@ -26,6 +26,11 @@ var (
 	Bridge         *bridge.Bridge
 	RunList        sync.Map //map[int]interface{}
 	HttpProxyCache = index.NewAnyIntIndex()
+
+	// ManagementEventHook is called when tunnel/client/host resources are mutated.
+	// It is set by web/routers/state.go during node initialization.
+	// The hook receives: eventName, resource, action, fields.
+	ManagementEventHook func(eventName, resource, action string, fields map[string]interface{})
 )
 
 func ClearProxyCache() {

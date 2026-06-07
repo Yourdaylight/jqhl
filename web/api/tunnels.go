@@ -187,7 +187,8 @@ func (a *App) sanitizeNodeTunnel(actor *Actor, scope webservice.NodeAccessScope,
 }
 
 func (a *App) finishNodeTunnelMutation(c Context, action, eventName string, id int, tunnel *file.Tunnel, overrides map[string]interface{}) {
-	a.emitNodeResourceMutationEvent(c, eventName, "tunnel", action, nodeResourceMutationFields(id, tunnelEventFields(tunnel), overrides))
+	// Event emission is now handled exclusively by the service layer (web/service/resources.go).
+	// a.emitNodeResourceMutationEvent(c, eventName, "tunnel", action, nodeResourceMutationFields(id, tunnelEventFields(tunnel), overrides))
 	a.respondCompletedNodeMutation(c, "tunnel", action, id, a.nodeTunnelResource(tunnel))
 }
 

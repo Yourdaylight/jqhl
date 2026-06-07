@@ -18,6 +18,7 @@ import (
 
 	"github.com/djylb/nps/lib/logs"
 	"github.com/djylb/nps/lib/servercfg"
+	"github.com/djylb/nps/server"
 	webapi "github.com/djylb/nps/web/api"
 	webservice "github.com/djylb/nps/web/service"
 	"github.com/gin-gonic/gin"
@@ -2018,6 +2019,25 @@ func (m *nodeReverseManager) serveConn(platform servercfg.ManagementPlatformConf
 		)
 	}(platform.ReverseHeartbeatSeconds)
 
+	// Periodic full tunnel state reporting (60s)
+	backgroundWG.Add(1)
+	go func() {
+		defer backgroundWG.Done()
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				report := buildTunnelFullReportFrame(m.state, platform.PlatformID)
+				if report != nil {
+					_ = writeFrame(*report)
+				}
+			}
+		}
+	}()
+
 	reverseHost := reverseWSHost(platform.ReverseWSURL)
 	base := nodeWSDispatchBase{
 		Context:    m.ctx,
@@ -2245,4 +2265,74 @@ func (m *nodeReverseManager) runtimeStatus() webservice.ManagementPlatformRuntim
 		return ensureNodeManagementPlatformRuntimeStore(m.state)
 	}
 	return webservice.NewInMemoryManagementPlatformRuntimeStatusStore()
+}
+
+
+// buildTunnelFullReportFrame collects all tunnels and builds a WS event frame.
+func buildTunnelFullReportFrame(state *State, platformID string) *nodeWSFrame {
+	if state == nil {
+		return nil
+	}
+	allTunnels, _ := server.GetTunnel(0, 99999, "", 0, "", "", "")
+	if len(allTunnels) == 0 {
+		return nil
+	}
+	tunnelSnapshots := make([]map[string]interface{}, 0, len(allTunnels))
+	for _, t := range allTunnels {
+		targetAddr := ""
+		if t.Target != nil {
+			targetAddr = t.Target.TargetStr
+		}
+		snap := map[string]interface{}{
+			"id":          t.Id,
+			"port":        t.Port,
+			"mode":        t.Mode,
+			"status":      t.Status,
+			"run_status":  t.RunStatus,
+			"remark":      t.Remark,
+			"target":      targetAddr,
+			"target_type": t.TargetType,
+			"now_conn":    t.NowConn,
+			"max_conn":    t.MaxConn,
+			"expire_at":   t.ExpireAt,
+			"rate_limit":  t.RateLimit,
+		}
+		if t.Client != nil {
+			snap["client_id"] = t.Client.Id
+		}
+		if t.Flow != nil {
+			snap["flow_in"] = t.Flow.InletFlow
+			snap["flow_out"] = t.Flow.ExportFlow
+			snap["flow_limit"] = t.Flow.FlowLimit
+		}
+		if t.ServiceTraffic != nil {
+			snap["service_traffic_in"] = t.ServiceTraffic.InletBytes
+			snap["service_traffic_out"] = t.ServiceTraffic.ExportBytes
+		}
+		tunnelSnapshots = append(tunnelSnapshots, snap)
+	}
+
+	event := webapi.Event{
+		Name:     "tunnel.full_report",
+		Resource: "tunnel",
+		Action:   "report",
+		Fields: map[string]interface{}{
+			"platform_id": platformID,
+			"tunnels":     tunnelSnapshots,
+			"reported_at": time.Now().Unix(),
+			"count":       len(tunnelSnapshots),
+		},
+	}
+	body, err := json.Marshal(event)
+	if err != nil {
+		logs.Warn("[rev-ws] failed to marshal tunnel full report: %v", err)
+		return nil
+	}
+	frame := &nodeWSFrame{
+		Type:      "event",
+		ID:        "tunnel-report-" + strconv.FormatInt(time.Now().UnixNano(), 10),
+		Timestamp: time.Now().Unix(),
+		Body:      body,
+	}
+	return frame
 }

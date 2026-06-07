@@ -562,6 +562,7 @@ func snapshotTunnelForList(tunnel *file.Tunnel) *file.Tunnel {
 		ServiceTraffic: cloneTrafficStatsForList(tunnel.ServiceTraffic),
 		ServiceMeter:   tunnel.ServiceMeter.Clone(),
 		NowConn:        tunnel.NowConn,
+		MaxConn:        tunnel.MaxConn,
 		Password:       tunnel.Password,
 		Remark:         tunnel.Remark,
 		TargetAddr:     tunnel.TargetAddr,
