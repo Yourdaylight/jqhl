@@ -166,6 +166,7 @@ func buildEngineWithError(state *State) (http.Handler, error) {
 
 	engine.Static(joinBase(basePath, "/static"), filepath.Join(common.GetRunPath(), "web", "static"))
 	registerNodeRoutes(engine, state)
+	registerLegacyCompatRoutes(engine, state)
 
 	group := engine.Group(basePath)
 	group.Use(sessionMiddleware())

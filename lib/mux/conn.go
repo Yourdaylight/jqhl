@@ -204,11 +204,11 @@ func (s *Conn) Read(buf []byte) (n int, err error) {
 	if len(buf) == 0 {
 		return 0, nil
 	}
+	s.readMu.Lock()
+	defer s.readMu.Unlock()
 	if s.IsClosed() {
 		return 0, errors.New("the conn has closed")
 	}
-	s.readMu.Lock()
-	defer s.readMu.Unlock()
 	n, err = s.receiveWindow.Read(buf, s.connId)
 	if err == io.EOF && atomic.LoadUint32(&s.writeClosed) == 1 && atomic.LoadUint32(&s.remoteWriteClosed) == 1 {
 		s.closeLocal()
@@ -304,7 +304,9 @@ func (s *Conn) closeProcess(notifyRemote bool) {
 		s.receiveWindow.mux.sendInfo(muxConnClose, s.connId, s.priority, nil)
 	}
 	s.sendWindow.CloseWindow()
+	s.readMu.Lock()
 	s.receiveWindow.CloseWindow()
+	s.readMu.Unlock()
 }
 
 func (s *Conn) LocalAddr() net.Addr {
