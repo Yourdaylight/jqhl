@@ -156,7 +156,9 @@ func (s *Bridge) attachTunnelNode(id, ver int, vs, uuid string, anyConn any) (*N
 	node.AddTunnel(anyConn)
 	client := NewClient(id, node)
 	client.SetCloseNodeHook(s.notifyCloseNode)
+	isNewClient := true
 	if existing, loaded := s.loadOrStoreRuntimeClient(id, client); loaded {
+		isNewClient = false
 		client = existing
 		client.SetCloseNodeHook(s.notifyCloseNode)
 		client.MarkConnectedNow()
@@ -169,6 +171,9 @@ func (s *Bridge) attachTunnelNode(id, ver int, vs, uuid string, anyConn any) (*N
 		}
 	}
 	client.MarkConnectedNow()
+	if isNewClient {
+		s.notifyClientConnect(id)
+	}
 	return node, client
 }
 

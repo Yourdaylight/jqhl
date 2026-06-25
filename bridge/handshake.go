@@ -767,7 +767,9 @@ func (s *Bridge) handleMainWork(c *conn.Conn, id, ver int, vs, uuid string, addr
 	node.AddSignal(c)
 	client := NewClient(id, node)
 	client.SetCloseNodeHook(s.notifyCloseNode)
+	isNewClient := true
 	if existing, loaded := s.loadOrStoreRuntimeClient(id, client); loaded {
+		isNewClient = false
 		client = existing
 		client.SetCloseNodeHook(s.notifyCloseNode)
 		client.MarkConnectedNow()
@@ -780,6 +782,9 @@ func (s *Bridge) handleMainWork(c *conn.Conn, id, ver int, vs, uuid string, addr
 		}
 	}
 	client.MarkConnectedNow()
+	if isNewClient {
+		s.notifyClientConnect(id)
+	}
 	go s.GetHealthFromClient(id, c, client, node)
 	logs.Info("ClientId %d connection succeeded, address:%v ", id, addr)
 }

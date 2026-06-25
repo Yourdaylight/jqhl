@@ -73,8 +73,10 @@ type Bridge struct {
 	disconnectTime     atomic.Int64
 	p2pSessions        *p2pSessionManager
 	p2pAssociations    *p2pAssociationManager
-	closeClientHook    atomic.Value
-	closeNodeHook      atomic.Value
+	closeClientHook      atomic.Value
+	closeNodeHook        atomic.Value
+	clientConnectHook    atomic.Value
+	clientDisconnectHook atomic.Value
 }
 
 func NewTunnel(ipVerify bool, runList *sync.Map, disconnectTime int) *Bridge {
@@ -129,6 +131,14 @@ type closeNodeHookEntry struct {
 	run func(int, string)
 }
 
+type clientConnectHookEntry struct {
+	run func(int)
+}
+
+type clientDisconnectHookEntry struct {
+	run func(int)
+}
+
 type bridgeRuntimeClientLookupState uint8
 
 const (
@@ -157,6 +167,50 @@ func (s *Bridge) SetCloseNodeHook(hook func(int, string)) {
 	s.closeNodeHook.Store(closeNodeHookEntry{run: hook})
 }
 
+func (s *Bridge) SetClientConnectHook(hook func(int)) {
+	if s == nil {
+		return
+	}
+	s.clientConnectHook.Store(clientConnectHookEntry{run: hook})
+}
+
+func (s *Bridge) SetClientDisconnectHook(hook func(int)) {
+	if s == nil {
+		return
+	}
+	s.clientDisconnectHook.Store(clientDisconnectHookEntry{run: hook})
+}
+
+func (s *Bridge) notifyClientConnect(id int) {
+	if s == nil || id == 0 {
+		return
+	}
+	value := s.clientConnectHook.Load()
+	if value == nil {
+		return
+	}
+	entry, ok := value.(clientConnectHookEntry)
+	if !ok || entry.run == nil {
+		return
+	}
+	entry.run(id)
+}
+
+func (s *Bridge) notifyClientDisconnect(id int) {
+	if s == nil || id == 0 {
+		return
+	}
+	value := s.clientDisconnectHook.Load()
+	if value == nil {
+		return
+	}
+	entry, ok := value.(clientDisconnectHookEntry)
+	if !ok || entry.run == nil {
+		return
+	}
+	entry.run(id)
+}
+
 func (s *Bridge) notifyCloseClient(id int) {
 	if s == nil || id == 0 {
 		return
@@ -170,6 +224,7 @@ func (s *Bridge) notifyCloseClient(id int) {
 		return
 	}
 	entry.run(id)
+	s.notifyClientDisconnect(id)
 }
 
 func (s *Bridge) notifyCloseNode(id int, uuid string) {

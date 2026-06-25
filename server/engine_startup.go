@@ -33,10 +33,12 @@ var runtimeEngine = newServerEngineContext()
 func newServerEngineContext() *serverEngineContext {
 	ctx := &serverEngineContext{}
 	ctx.bridgeFactory = bridgeFactory{
-		resolveRunList:  runtimeTasks.raw,
-		newBridge:       bridge.NewTunnel,
-		closeClientHook: runtimeBridgeEvents.HandleCloseClient,
-		closeNodeHook:   runtimeBridgeEvents.HandleCloseNode,
+		resolveRunList:       runtimeTasks.raw,
+		newBridge:            bridge.NewTunnel,
+		closeClientHook:      runtimeBridgeEvents.HandleCloseClient,
+		closeNodeHook:        runtimeBridgeEvents.HandleCloseNode,
+		clientConnectHook:    runtimeBridgeEvents.HandleConnectClient,
+		clientDisconnectHook: runtimeBridgeEvents.HandleDisconnectClient,
 	}
 	ctx.bridgeLauncher = bridgeRuntimeLauncher{
 		currentBridge: runtimeState.Bridge,
@@ -206,10 +208,12 @@ func (l backgroundRuntimeLauncher) Start() {
 }
 
 type bridgeFactory struct {
-	resolveRunList  func() *sync.Map
-	newBridge       func(bool, *sync.Map, int) *bridge.Bridge
-	closeClientHook func(int)
-	closeNodeHook   func(int, string)
+	resolveRunList        func() *sync.Map
+	newBridge             func(bool, *sync.Map, int) *bridge.Bridge
+	closeClientHook       func(int)
+	closeNodeHook         func(int, string)
+	clientConnectHook     func(int)
+	clientDisconnectHook  func(int)
 }
 
 func (f bridgeFactory) New(cfg *servercfg.Snapshot, bridgeDisconnect int) *bridge.Bridge {
@@ -225,6 +229,8 @@ func (f bridgeFactory) New(cfg *servercfg.Snapshot, bridgeDisconnect int) *bridg
 	if runtimeBridge != nil {
 		runtimeBridge.SetCloseClientHook(f.closeClientHook)
 		runtimeBridge.SetCloseNodeHook(f.closeNodeHook)
+		runtimeBridge.SetClientConnectHook(f.clientConnectHook)
+		runtimeBridge.SetClientDisconnectHook(f.clientDisconnectHook)
 	}
 	return runtimeBridge
 }
@@ -827,6 +833,30 @@ func (c bridgeEventCoordinator) HandleCloseClient(clientID int) {
 	}
 	c.runtime.DeleteClientResources(clientID)
 	c.deleteTransientClosedClient(clientID)
+}
+
+func (c bridgeEventCoordinator) HandleConnectClient(clientID int) {
+	if clientID == 0 {
+		return
+	}
+	if hook := ManagementEventHook; hook != nil {
+		hook("client.connected", "client", "connect", map[string]interface{}{
+			"id":         clientID,
+			"is_connect": true,
+		})
+	}
+}
+
+func (c bridgeEventCoordinator) HandleDisconnectClient(clientID int) {
+	if clientID == 0 {
+		return
+	}
+	if hook := ManagementEventHook; hook != nil {
+		hook("client.disconnected", "client", "disconnect", map[string]interface{}{
+			"id":         clientID,
+			"is_connect": false,
+		})
+	}
 }
 
 func (c bridgeEventCoordinator) HandleCloseNode(clientID int, uuid string) {
